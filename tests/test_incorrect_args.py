@@ -32,6 +32,11 @@ class InvalidTestedMethodArgs:
             ("a",),
             {"wrong": 1},
         ),
+        InvalidTestedMethodArgs(
+            "too_many_kwargs",
+            (),
+            {"key": "a", "default": 1, "wrong": 2},
+        ),
     ),
     ids=str,
 )
@@ -124,3 +129,24 @@ def test_popall_args(
             *tested_method_args.positional,
             **tested_method_args.keyword,
         )
+
+
+def test_add_args(
+    multidict_object: MultiDict[int],
+    tested_method_args: InvalidTestedMethodArgs,
+) -> None:
+    with pytest.raises(TypeError, match=r".*argument.*"):
+        multidict_object.add(
+            *tested_method_args.positional,
+            **tested_method_args.keyword,
+        )
+
+
+def test_add_only_key_by_keyword(
+    multidict_object: MultiDict[int],
+) -> None:
+    # ``add`` is the only two-argument method requiring both arguments.  The C
+    # parser used to leave ``value`` as a NULL pointer here and the caller
+    # dereferenced it, segfaulting the interpreter.
+    with pytest.raises(TypeError, match=r"required positional argument: 'value'"):
+        multidict_object.add(key="k")  # type: ignore[call-arg]
