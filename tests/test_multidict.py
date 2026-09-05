@@ -1499,7 +1499,7 @@ def test_new_without_init_is_valid_empty(cls_name: str) -> None:
     assert len(d) == 0
     assert d.get("k") is None
     with pytest.raises(KeyError):
-        d["k"]
+        d.__getitem__("k")
     d["a"] = "1"
     assert d["a"] == "1"
 
@@ -1517,3 +1517,6 @@ def test_new_without_init_is_valid_empty(cls_name: str) -> None:
     s = Sub()
     assert len(s) == 0
     assert s.get("missing") is None
+    # is_ci is derived with PyType_IsSubtype, so subclasses inherit it too
+    s["A"] = "1"
+    assert s.get("a") == ("1" if cls_name == "CIMultiDict" else None)
