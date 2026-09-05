@@ -35,6 +35,15 @@ typedef struct {
     MultiDictObject* md;
 } MultiDictProxyObject;
 
+static inline PyObject*
+multidict_forbidden_new(PyTypeObject* type, PyObject* args, PyObject* kwargs)
+{
+    PyErr_Format(PyExc_TypeError,
+                 "cannot create '%s' instances directly",
+                 type->tp_name);
+    return NULL;
+}
+
 #ifdef __cplusplus
 }
 #endif
