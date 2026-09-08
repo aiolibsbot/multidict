@@ -59,7 +59,9 @@ The iteration for operations like getall() is a little tricky. The next index
 calculation could return the already visited index before reaching the end. To
 eliminate duplicates, the code marks already visited entries by entry->hash =
 -1. -1 hash is an invalid hash value that could be used as a marker. After the
-iteration finishes, all marked entries are restored.  Double iteration over the
+iteration finishes, all marked entries are restored.  The pure-Python backend
+marks entries by XOR-ing the hash's high bit instead, which is equivalent for
+this purpose but keeps the original hash bits.  Double iteration over the
 indices still has O(1) amortized time, it is ok.
 
 `.add()`, `val = md[key]`, `md[key] = val`, `md.setdefault()` all have O(1).

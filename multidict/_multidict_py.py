@@ -32,14 +32,17 @@ else:
 
 MAXSIZE = sys.maxsize
 
-# hash() never returns a value outside [-(MAXSIZE + 1), MAXSIZE]. XORing a
+# hash() never returns a value outside [HASH_MIN, MAXSIZE]. XORing a
 # real hash with its highest bit always pushes the result outside that
 # range, so it can be used to mark an entry's hash as temporarily invalid
 # (its slot is being processed) without losing the original bits: XORing
 # the same bit again restores the exact original hash, no recomputation
 # needed. A plain OR/AND wouldn't do: Python ints are arbitrary precision,
 # so any negative hash already reads that bit as set.
+# The C backend deliberately keeps the -1 sentinel for the same purpose,
+# see the design notes in _multilib/hashtable.h.
 HASH_MARK = MAXSIZE + 1
+HASH_MIN = -HASH_MARK
 
 
 class istr(str):
@@ -562,10 +565,10 @@ class _HtKeys(Generic[_V]):
             assert e is not None
             hash_ = e.hash
             if update:
-                if hash_ > MAXSIZE or hash_ < -HASH_MARK:
+                if not HASH_MIN <= hash_ <= MAXSIZE:
                     hash_ ^= HASH_MARK
             else:
-                assert not (hash_ > MAXSIZE or hash_ < -HASH_MARK)
+                assert HASH_MIN <= hash_ <= MAXSIZE
             i = hash_ & mask
             perturb = hash_ & MAXSIZE
             while indices[i] != -1:
@@ -627,7 +630,7 @@ class _HtKeys(Generic[_V]):
         while ix != -1:
             if ix != -2:
                 entry = entries[ix]
-                if entry.hash > MAXSIZE or entry.hash < -HASH_MARK:
+                if not HASH_MIN <= entry.hash <= MAXSIZE:
                     entry.hash ^= HASH_MARK
             perturb >>= 5
             i = (i * 5 + perturb + 1) & mask
@@ -905,7 +908,7 @@ class MultiDict(_CSMixin, MutableMultiMapping[_V]):
                     e.hash ^= HASH_MARK
                     found = True
                     self._incr_version()
-                elif not (e.hash > MAXSIZE or e.hash < -HASH_MARK):  # pragma: no branch
+                elif HASH_MIN <= e.hash <= MAXSIZE:  # pragma: no branch
                     self._del_at(slot, idx)
 
         if not found:
@@ -1065,7 +1068,7 @@ class MultiDict(_CSMixin, MutableMultiMapping[_V]):
                     entries[idx] = None
                     indices[slot] = -2
                     self._used -= 1
-                if e2.hash > MAXSIZE or e2.hash < -HASH_MARK:
+                if not HASH_MIN <= e2.hash <= MAXSIZE:
                     e2.hash ^= HASH_MARK
 
         self._incr_version()
