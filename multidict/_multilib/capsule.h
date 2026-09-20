@@ -295,9 +295,25 @@ MultiDict_SetItem(void* state_, PyObject* self, PyObject* key, PyObject* value)
 {
     __MULTIDICT_VALIDATION_CHECK(self, state_, -1);
     int ret;
+#ifdef Py_GIL_DISABLED
+    /* md_replace() defers the decrefs it would otherwise run inline, so
+       that none of them can suspend the critical section below and let a
+       concurrent mutation swap md->keys out mid-scan; the collected
+       references are released once the section is left, exactly as
+       multidict_mp_as_subscript() does in _multidict.c. */
+    md_deferred_decref_t defer;
+    md_deferred_decref_init(&defer);
+#endif
     Py_BEGIN_CRITICAL_SECTION(self);
+#ifdef Py_GIL_DISABLED
+    ret = md_replace((MultiDictObject*)self, key, value, &defer);
+#else
     ret = md_replace((MultiDictObject*)self, key, value);
+#endif
     Py_END_CRITICAL_SECTION();
+#ifdef Py_GIL_DISABLED
+    md_deferred_decref_release(&defer);
+#endif
     return ret;
 }
 
