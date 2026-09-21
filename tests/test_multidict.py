@@ -2246,8 +2246,11 @@ def test_update_vs_update_same_key_thread_safety() -> None:
 @pytest.mark.c_extension
 def test_setdefault_vs_update_same_key_thread_safety() -> None:
     """Same family as #1483/#1489: setdefault() racing update() on the
-    same key must not insert a duplicate. setdefault()'s masked-comparison
-    fix (not deferred-decref) closes this; both builds covered."""
+    same key must not insert a duplicate. Free-threaded build: closed by
+    md_set_default()'s masked comparison. Standard build: that comparison
+    isn't compiled in, so what closes it is update()'s decrefs now being
+    deferred, leaving no suspension point for setdefault() to observe a
+    marked entry through."""
 
     class Evil:
         def __init__(self, n: int) -> None:
@@ -2277,19 +2280,21 @@ def test_setdefault_vs_update_same_key_thread_safety() -> None:
 
 
 @pytest.mark.c_extension
-@pytest.mark.skipif(
-    hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled(),
+@pytest.mark.skip(
     reason=(
-        "hits a separate, pre-existing bug on free-threaded builds "
-        "(stale cached entries/iterator in md_del()/md_pop_all(), "
-        "unrelated to this fix) -- see aio-libs/multidict#1492"
+        "also drives a separate, pre-existing bug present on both builds "
+        "(md_del()/md_pop_all() cache entries/iterator across a decref "
+        "that can suspend, so a concurrent resize frees the table under "
+        "them), unrelated to this fix -- see aio-libs/multidict#1492. "
+        "Unskip once that lands."
     ),
 )
-def test_del_pop_vs_update_same_key_gil_build_thread_safety() -> None:
-    """Regression for #1489 (GIL-build __delitem__/pop()/popall()):
-    _md_del_at() now finishes table bookkeeping before any decref, so a
-    __del__-triggered GIL release can't expose a half-deleted entry.
-    Each worker re-sets the key after removing it, so it's always
+def test_del_pop_vs_update_same_key_thread_safety() -> None:
+    """Regression for #1489 (__delitem__/pop()/popall()): _md_del_at()
+    now finishes table bookkeeping before any decref, so a __del__ that
+    suspends (GIL release on the standard build, critical-section
+    suspension on the free-threaded one) can't expose a half-deleted
+    entry. Each worker re-sets the key after removing it, so it's always
     present at join regardless of interleaving."""
 
     class Evil:

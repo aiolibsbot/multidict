@@ -1005,8 +1005,10 @@ fail:
 /* Defers decref of replaced/removed entry refs until the mutation fully
    finishes: an early decref's __del__ could suspend the critical section
    (or release the GIL on a GIL build, see #1489), exposing a half-updated
-   entry to another thread. 1024 keeps the allocator out of the common path. */
-#define MD_DEFERRED_DECREF_INLINE 1024
+   entry to another thread. Sized like md_readonly_finder_t's visited
+   buffer, for the same reason: the common case (0-1 replaced entries per
+   call) fits inline, pathological cases spill to the allocator. */
+#define MD_DEFERRED_DECREF_INLINE 8
 
 typedef struct _md_deferred_decref {
     PyObject* inline_buf[MD_DEFERRED_DECREF_INLINE];
@@ -2756,7 +2758,12 @@ static inline int
 md_post_update(MultiDictObject* md, md_deferred_decref_t* defer)
 {
     /* `defer` is NULL only for a pure .merge() sweep, which never
-     * half-deletes. */
+     * half-deletes, so the branch below is not expected to fire there.
+     * Restarting from slot 0 against the current table is safe: an entry
+     * this function already finished (identity cleared) is exactly what
+     * _md_resize()'s copy drops, so it simply isn't there to revisit,
+     * while anything not yet finished keeps its identity and is copied
+     * over unchanged. */
     int ret = 0;
     for (;;) {
         htkeys_t* keys = md->keys;
