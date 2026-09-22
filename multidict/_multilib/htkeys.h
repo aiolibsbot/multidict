@@ -428,7 +428,8 @@ _htkeys_find_empty_slot_resume(htkeys_t* keys, size_t i)
 }
 
 /*
-Internal routine used by ht_resize() to build a hashtable of entries.
+Builds the index array for `n` entries starting at `ep`.
+Used by _md_resize() and _md_shrink(); cannot fail.
 */
 static inline void
 htkeys_build_indices(htkeys_t* keys, entry_t* ep, Py_ssize_t n)
