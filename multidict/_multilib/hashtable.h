@@ -1032,7 +1032,7 @@ md_del(MultiDictObject* md, PyObject* key)
 
 restart:;
     htkeys_t* keys = md->keys;
-    uint64_t version = md->version;
+    uint64_t version = atomic_load_uint64_relaxed(&md->version);
     htkeysiter_t iter;
     htkeysiter_init(&iter, keys, hash);
 
@@ -1053,7 +1053,8 @@ restart:;
         found = true;
         _md_del_at(md, iter.slot, entry);
         // the decref can run a __del__ that lets another thread resize
-        if (UNLIKELY(md->keys != keys || md->version != version)) {
+        if (UNLIKELY(md->keys != keys ||
+                     atomic_load_uint64_relaxed(&md->version) != version)) {
             goto restart;
         }
     }
@@ -1082,7 +1083,7 @@ static inline void
 md_init_pos(MultiDictObject* md, md_pos_t* pos)
 {
     pos->pos = 0;
-    pos->version = md->version;
+    pos->version = atomic_load_uint64_relaxed(&md->version);
 }
 
 static inline int
@@ -1091,7 +1092,7 @@ md_next(MultiDictObject* md, md_pos_t* pos, PyObject** pidentity,
 {
     int ret = 0;
 
-    if (pos->version != md->version) {
+    if (pos->version != atomic_load_uint64_relaxed(&md->version)) {
         PyErr_SetString(PyExc_RuntimeError,
                         "MultiDict is changed during iteration");
         ret = -1;
@@ -1155,7 +1156,7 @@ static inline void
 md_init_pos_reverse(MultiDictObject* md, md_pos_t* pos)
 {
     pos->pos = md->keys->nentries - 1;
-    pos->version = md->version;
+    pos->version = atomic_load_uint64_relaxed(&md->version);
 }
 
 static inline int
@@ -1164,7 +1165,7 @@ md_prev(MultiDictObject* md, md_pos_t* pos, PyObject** pidentity,
 {
     int ret = 0;
 
-    if (pos->version != md->version) {
+    if (pos->version != atomic_load_uint64_relaxed(&md->version)) {
         PyErr_SetString(PyExc_RuntimeError,
                         "MultiDict is changed during iteration");
         ret = -1;
@@ -1505,7 +1506,7 @@ md_to_dict(MultiDictObject* md, PyObject** ret)
 {
     PyObject* key = NULL;
     PyObject* lst = NULL;
-    uint64_t version = md->version;
+    uint64_t version = atomic_load_uint64_relaxed(&md->version);
     bitmap_t collected;
     collected.summary = NULL;
 
@@ -1574,7 +1575,7 @@ md_to_dict(MultiDictObject* md, PyObject** ret)
         }
         Py_CLEAR(key);
         Py_CLEAR(lst);
-        if (md->version != version) {
+        if (atomic_load_uint64_relaxed(&md->version) != version) {
             PyErr_SetString(PyExc_RuntimeError,
                             "MultiDict is changed during iteration");
             goto fail;
@@ -1729,7 +1730,8 @@ restart:;
             atomic_store_uint64_relaxed(&md->version, version);
             _md_del_at(md, iter.slot, entry);
             // the decref can run a __del__ that lets another thread resize
-            if (UNLIKELY(md->keys != keys || md->version != version)) {
+            if (UNLIKELY(md->keys != keys || atomic_load_uint64_relaxed(
+                                                 &md->version) != version)) {
                 goto restart;
             }
         }
@@ -1829,7 +1831,7 @@ _md_replace(MultiDictObject* md, PyObject* key, PyObject* value,
             }
 #ifdef Py_GIL_DISABLED
             htkeys_t* keys_before = md->keys;
-            uint64_t version_before = md->version;
+            uint64_t version_before = atomic_load_uint64_relaxed(&md->version);
 #endif
             entry_t* entries = htkeys_entries(md->keys);
             entry_t* entry = entries + iter.index;
@@ -1880,7 +1882,8 @@ _md_replace(MultiDictObject* md, PyObject* key, PyObject* value,
                would make a pointer-only check miss the change. Every
                mutation bumps md->version, including ones that don't
                otherwise touch md->keys, so compare both. */
-            if (md->keys != keys_before || md->version != version_before) {
+            if (md->keys != keys_before ||
+                atomic_load_uint64_relaxed(&md->version) != version_before) {
                 stale = true;
                 break;
             }
@@ -1949,7 +1952,7 @@ _md_update(MultiDictObject* md, Py_hash_t hash, PyObject* identity,
             }
 #ifdef Py_GIL_DISABLED
             htkeys_t* keys_before = md->keys;
-            uint64_t version_before = md->version;
+            uint64_t version_before = atomic_load_uint64_relaxed(&md->version);
 #endif
             entry_t* entries = htkeys_entries(md->keys);
             entry_t* entry = entries + iter.index;
@@ -2025,7 +2028,8 @@ _md_update(MultiDictObject* md, Py_hash_t hash, PyObject* identity,
 #ifdef Py_GIL_DISABLED
             /* See _md_replace()'s comment on why both the pointer and
                the version are checked. */
-            if (md->keys != keys_before || md->version != version_before) {
+            if (md->keys != keys_before ||
+                atomic_load_uint64_relaxed(&md->version) != version_before) {
                 stale = true;
                 break;
             }
@@ -2044,10 +2048,10 @@ _md_update(MultiDictObject* md, Py_hash_t hash, PyObject* identity,
             goto fail;
         }
     }
-    marks->version = md->version;
+    marks->version = atomic_load_uint64_relaxed(&md->version);
     return 0;
 fail:
-    marks->version = md->version;
+    marks->version = atomic_load_uint64_relaxed(&md->version);
     return -1;
 }
 
@@ -2075,7 +2079,7 @@ _md_merge(MultiDictObject* md, Py_hash_t hash, PyObject* identity,
     }
 
     int ret = _md_add_for_upd(md, hash, identity, key, value, marks);
-    marks->version = md->version;
+    marks->version = atomic_load_uint64_relaxed(&md->version);
     return ret;
 }
 
@@ -2108,7 +2112,7 @@ _md_post_update_sweep(MultiDictObject* md, deferred_decref_t* defer)
     for (;;) {
         htkeys_t* keys = md->keys;
 #ifdef Py_GIL_DISABLED
-        uint64_t version_before = md->version;
+        uint64_t version_before = atomic_load_uint64_relaxed(&md->version);
 #endif
         size_t num_slots = htkeys_nslots(keys);
         entry_t* entries = htkeys_entries(keys);
@@ -2121,7 +2125,8 @@ _md_post_update_sweep(MultiDictObject* md, deferred_decref_t* defer)
                     ret = -1;
                 }
 #ifdef Py_GIL_DISABLED
-                if (md->keys != keys || md->version != version_before) {
+                if (md->keys != keys || atomic_load_uint64_relaxed(
+                                            &md->version) != version_before) {
                     stale = true;
                     break;
                 }
@@ -2145,7 +2150,7 @@ _md_post_update_deleted(MultiDictObject* md, deferred_decref_t* defer,
     int ret = 0;
     htkeys_t* keys = md->keys;
 #ifdef Py_GIL_DISABLED
-    uint64_t version_before = md->version;
+    uint64_t version_before = atomic_load_uint64_relaxed(&md->version);
 #endif
     entry_t* entries = htkeys_entries(keys);
     for (Py_ssize_t pos = bitmap_next(&marks->deleted, 0); pos >= 0;
@@ -2171,7 +2176,8 @@ _md_post_update_deleted(MultiDictObject* md, deferred_decref_t* defer,
         }
 #ifdef Py_GIL_DISABLED
         /* Only an out-of-memory fallback decref above can run Python. */
-        if (md->keys != keys || md->version != version_before) {
+        if (md->keys != keys ||
+            atomic_load_uint64_relaxed(&md->version) != version_before) {
             if (_md_post_update_sweep(md, defer) < 0) {
                 ret = -1;
             }
@@ -2801,7 +2807,7 @@ md_repr(MultiDictObject* md, PyObject* obj, bool show_keys, bool show_values)
     PyObject* value = NULL;
 
     bool comma = false;
-    uint64_t version = md->version;
+    uint64_t version = atomic_load_uint64_relaxed(&md->version);
 
     PyUnicodeWriter* writer = PyUnicodeWriter_Create(1024);
     if (writer == NULL) {
@@ -2823,7 +2829,7 @@ md_repr(MultiDictObject* md, PyObject* obj, bool show_keys, bool show_values)
     entry_t* entries = htkeys_entries(md->keys);
 
     for (Py_ssize_t pos = 0; pos < md->keys->nentries; ++pos) {
-        if (version != md->version) {
+        if (version != atomic_load_uint64_relaxed(&md->version)) {
             PyErr_SetString(PyExc_RuntimeError,
                             "MultiDict changed during iteration");
             goto fail;  // discard the writer instead of leaking it

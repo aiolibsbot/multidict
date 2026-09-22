@@ -184,9 +184,12 @@ def test_race_condition_getversion_vs_mutation(
         # a reader ever gets scheduled, leaving `seen` empty for reasons
         # that have nothing to do with the atomic version fix.
         i = 0
-        while not stop.is_set():
-            md["k"] = f"v{i}"
-            i += 1
+        try:
+            while not stop.is_set():
+                md["k"] = f"v{i}"
+                i += 1
+        except Exception as e:  # pragma: no cover
+            errors.append(f"writer: {type(e).__name__}: {e}")
 
     def reader() -> None:
         ready.wait()
@@ -215,4 +218,7 @@ def test_race_condition_getversion_vs_mutation(
     # with every store to it, so a reader must never observe the version
     # go backwards even though it can see stale values.
     assert not errors, f"Unexpected errors during concurrent execution: {errors}"
-    assert seen
+    # A bare `assert seen` would hold even if the writer died on its first
+    # mutation, since the readers fill `seen` regardless. Requiring the
+    # version to advance is what proves the race was actually exercised.
+    assert max(seen) > min(seen)

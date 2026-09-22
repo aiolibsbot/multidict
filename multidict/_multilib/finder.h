@@ -41,7 +41,7 @@ typedef struct _finder {
 static inline int
 finder_init(MultiDictObject* md, PyObject* identity, finder_t* finder)
 {
-    finder->version = md->version;
+    finder->version = atomic_load_uint64_relaxed(&md->version);
     finder->md = md;
     finder->identity = identity;
     finder->hash = _unicode_hash(identity);
@@ -102,7 +102,7 @@ find_next(finder_t* finder, PyObject** pkey, PyObject** pvalue)
     int ret = 0;
     assert(finder->iter.keys == finder->md->keys);
     if (finder->iter.keys != finder->md->keys ||
-        finder->version != finder->md->version) {
+        finder->version != atomic_load_uint64_relaxed(&finder->md->version)) {
         ret = -1;
         PyErr_SetString(PyExc_RuntimeError,
                         "MultiDict is changed during iteration");

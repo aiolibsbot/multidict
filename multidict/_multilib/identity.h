@@ -138,11 +138,11 @@ _md_ensure_key(MultiDictObject* md, entry_t* entry)
     }
     /* Building the istr can run Python code (a str subclass's __str__, a GC
        finalizer) that mutates md and frees entry, so hold our own refs. */
-    uint64_t version = md->version;
+    uint64_t version = atomic_load_uint64_relaxed(&md->version);
     PyObject* old_key = Py_NewRef(entry->key);
     PyObject* identity = Py_NewRef(entry->identity);
     PyObject* key = _md_calc_key(md, old_key, identity);
-    if (key != NULL && md->version == version) {
+    if (key != NULL && atomic_load_uint64_relaxed(&md->version) == version) {
         entry->key = Py_NewRef(key);
         Py_DECREF(old_key);
     }

@@ -50,7 +50,7 @@ update_marks_init(update_marks_t* marks, MultiDictObject* md)
     Py_ssize_t capacity = _md_entries_capacity(md->keys);
     bitmap_init(&marks->updated, md->keys, capacity);
     bitmap_init(&marks->deleted, md->keys, capacity);
-    marks->version = md->version;
+    marks->version = atomic_load_uint64_relaxed(&md->version);
     marks->lost = false;
 }
 
@@ -65,7 +65,7 @@ static inline void
 _update_marks_sync(update_marks_t* marks, MultiDictObject* md)
 {
     if (UNLIKELY(md->keys != marks->updated.keys ||
-                 md->version != marks->version)) {
+                 atomic_load_uint64_relaxed(&md->version) != marks->version)) {
         update_marks_release(marks);
         update_marks_init(marks, md);
         marks->lost = true;
