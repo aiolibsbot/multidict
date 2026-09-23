@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include "../multidict_capi_struct.h"
 #include "htkeys.h"
 
 /* State of the _multidict module */
@@ -56,6 +57,13 @@ typedef struct {
     pool_t iter_pool;
     pool_t md_pool;
     pool_t proxy_pool;
+
+    /* Watcher slots, indexed by the id MultiDict_AddWatcher() hands out.
+       Per-interpreter, like CPython's, since module state is. A NULL
+       callback is a free slot, and also what a watch bit left behind by
+       MultiDict_ClearWatcher() resolves to. */
+    MultiDict_WatchCallback watchers[MULTIDICT_MAX_WATCHERS];
+    void* watcher_data[MULTIDICT_MAX_WATCHERS];
 } mod_state;
 
 static inline mod_state*
