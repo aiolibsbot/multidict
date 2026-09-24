@@ -64,6 +64,12 @@ typedef struct {
        MultiDict_ClearWatcher() resolves to. */
     MultiDict_WatchCallback watchers[MULTIDICT_MAX_WATCHERS];
     void* watcher_data[MULTIDICT_MAX_WATCHERS];
+    /* Bumped every time a slot is handed out, and copied into the
+       md_watch_t of each multidict watched through it, so that a watch
+       left behind by a client that cleared its watcher cannot report to
+       whoever gets the slot next, carrying the previous client's
+       user_data. */
+    uint64_t watcher_epoch[MULTIDICT_MAX_WATCHERS];
 } mod_state;
 
 static inline mod_state*

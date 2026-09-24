@@ -296,6 +296,14 @@ cdef int _failing_event(void *watcher_data, void *user_data,
     return -1
 
 
+# Breaks the contract on purpose; see silent_failing_event() in
+# _testcapi.c.
+cdef int _silent_failing_event(void *watcher_data, void *user_data,
+                               const MultiDict_WatchInfo *info) noexcept:
+    (<object>watcher_data).append(None)
+    return -1
+
+
 def md_add_watcher(log):
     _watch_refs.append(log)
     return MultiDict_AddWatcher(_capi, _record_event, <void*>log)
@@ -304,6 +312,11 @@ def md_add_watcher(log):
 def md_add_failing_watcher(log):
     _watch_refs.append(log)
     return MultiDict_AddWatcher(_capi, _failing_event, <void*>log)
+
+
+def md_add_silent_failing_watcher(log):
+    _watch_refs.append(log)
+    return MultiDict_AddWatcher(_capi, _silent_failing_event, <void*>log)
 
 
 def md_add_null_watcher():
@@ -385,18 +398,27 @@ DEF MUTATING_WATCHER_ROUNDS = 3
 cdef int _watch_target_id = -1
 
 
+# The Cython-facing form, so that a failing MultiDict_Watch() leaves the
+# callback with a failure to report instead of an unconditional success;
+# see watching_event() in _testcapi.c, which returns the same result.
 cdef int _watching_event(void *watcher_data, void *user_data,
-                         const MultiDict_WatchInfo *info) noexcept:
-    (<object>watcher_data).append(<int>info.event)
-    MultiDict_Watch(_capi, _watch_target_id, <object>info.md, watcher_data)
-    return 0
+                         MultiDict_WatchEvent event, PyObject *md,
+                         object identity, Py_hash_t hash, object key,
+                         object value, object old_value) except -1:
+    (<object>watcher_data).append(<int>event)
+    return MultiDict_Watch(_capi, _watch_target_id, <object>md, watcher_data)
+
+
+cdef MultiDict_CyWatcherCtx _cy_watching_ctx
 
 
 def md_add_watching_watcher(log, int target_id):
     global _watch_target_id
     _watch_refs.append(log)
     _watch_target_id = target_id
-    return MultiDict_AddWatcher(_capi, _watching_event, <void*>log)
+    _cy_watching_ctx.callback = _watching_event
+    _cy_watching_ctx.watcher_data = <void*>log
+    return MultiDict_AddCyWatcher(_capi, &_cy_watching_ctx)
 
 
 # See unwatching_event() in _testcapi.c.
@@ -404,16 +426,22 @@ cdef int _unwatch_id = -1
 
 
 cdef int _unwatching_event(void *watcher_data, void *user_data,
-                           const MultiDict_WatchInfo *info) noexcept:
-    (<object>watcher_data).append(<int>info.event)
-    MultiDict_Unwatch(_capi, _unwatch_id, <object>info.md)
-    return 0
+                           MultiDict_WatchEvent event, PyObject *md,
+                           object identity, Py_hash_t hash, object key,
+                           object value, object old_value) except -1:
+    (<object>watcher_data).append(<int>event)
+    return MultiDict_Unwatch(_capi, _unwatch_id, <object>md)
+
+
+cdef MultiDict_CyWatcherCtx _cy_unwatching_ctx
 
 
 def md_add_unwatching_watcher(log):
     global _unwatch_id
     _watch_refs.append(log)
-    _unwatch_id = MultiDict_AddWatcher(_capi, _unwatching_event, <void*>log)
+    _cy_unwatching_ctx.callback = _unwatching_event
+    _cy_unwatching_ctx.watcher_data = <void*>log
+    _unwatch_id = MultiDict_AddCyWatcher(_capi, &_cy_unwatching_ctx)
     return _unwatch_id
 
 

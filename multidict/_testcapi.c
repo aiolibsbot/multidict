@@ -445,6 +445,18 @@ failing_event(void* watcher_data, void* user_data,
     return ret == 0 ? -1 : ret;
 }
 
+/* Breaks the contract on purpose: fails without setting an exception, so
+   that the reporting path has nothing of its own to report. */
+static int
+silent_failing_event(void* watcher_data, void* user_data,
+                     const MultiDict_WatchInfo* info)
+{
+    (void)user_data;
+    (void)info;
+    int ret = PyList_Append((PyObject*)watcher_data, Py_None);
+    return ret == 0 ? -1 : ret;
+}
+
 /* Mutates the multidict it is watching, from inside the delivery of that
    multidict's own events. Legal because delivery happens after the
    operation with no lock held; it stops after a couple of rounds so the
@@ -602,6 +614,12 @@ md_add_failing_watcher(PyObject* self, PyObject* arg)
 }
 
 static PyObject*
+md_add_silent_failing_watcher(PyObject* self, PyObject* arg)
+{
+    return _md_add_watcher(self, arg, silent_failing_event);
+}
+
+static PyObject*
 md_add_null_watcher(PyObject* self, PyObject* unused)
 {
     (void)unused;
@@ -748,6 +766,9 @@ static PyMethodDef module_methods[] = {
     {"md_foreach_raises", (PyCFunction)md_foreach_raises, METH_O},
     {"md_add_watcher", (PyCFunction)md_add_watcher, METH_O},
     {"md_add_failing_watcher", (PyCFunction)md_add_failing_watcher, METH_O},
+    {"md_add_silent_failing_watcher",
+     (PyCFunction)md_add_silent_failing_watcher,
+     METH_O},
     {"md_add_mutating_watcher", (PyCFunction)md_add_mutating_watcher, METH_O},
     {"md_add_unwatching_watcher",
      (PyCFunction)md_add_unwatching_watcher,

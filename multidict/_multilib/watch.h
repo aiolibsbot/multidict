@@ -29,8 +29,30 @@ extern "C" {
 struct _md_watch {
     uint8_t bits;
     void* user_data[MULTIDICT_MAX_WATCHERS];
+    /* The slot epoch each watch was taken at, so that a watch outliving
+       the client that took it cannot report to whoever registers into the
+       same slot next; see md_watch_live_bits(). */
+    uint64_t epoch[MULTIDICT_MAX_WATCHERS];
     watchlog_t log;
 };
+
+/* The watches that are still the ones their client took: a bit whose slot
+   has been cleared, or cleared and handed out again, is dropped here and
+   never reaches _md_watch_call(). Takes no lock; both sides are written
+   under the caller's own critical section, and the slot table only during
+   module initialization. */
+static inline uint8_t
+md_watch_live_bits(mod_state* state, md_watch_t* watch)
+{
+    uint8_t bits = watch->bits;
+    for (int id = 0; id < MULTIDICT_MAX_WATCHERS; id++) {
+        if ((bits & (1u << id)) != 0 &&
+            watch->epoch[id] != state->watcher_epoch[id]) {
+            bits &= (uint8_t)~(1u << id);
+        }
+    }
+    return bits;
+}
 
 /* Callbacks run here: after the operation finished, outside every lock. */
 static void
@@ -48,6 +70,17 @@ _md_watch_call(mod_state* state, uint8_t bits, void* const* user_data,
         }
         if (callback(state->watcher_data[id], user_data[id], info) < 0 ||
             PyErr_Occurred()) {
+            if (!PyErr_Occurred()) {
+                /* The contract says a callback that fails sets an
+                   exception, but nothing enforces it and
+                   PyErr_WriteUnraisable() needs a live one to report;
+                   without this the only failure channel the API has
+                   would go quiet. */
+                PyErr_Format(PyExc_SystemError,
+                             "multidict watcher %d returned -1 without "
+                             "setting an exception",
+                             id);
+            }
             /* The mutation already happened and cannot be undone, so a
                failing callback can only be reported, never propagated.
                Same rule as CPython's _PyDict_SendEvent(). `self` is at
@@ -72,7 +105,7 @@ _md_watch_recipients(MultiDictObject* md, void** user_data)
     uint8_t bits = 0;
     Py_BEGIN_CRITICAL_SECTION(md);
     if (md->watch != NULL) {
-        bits = md->watch->bits;
+        bits = md_watch_live_bits(md->state, md->watch);
         memcpy(user_data,
                md->watch->user_data,
                sizeof(void*) * MULTIDICT_MAX_WATCHERS);
@@ -217,11 +250,13 @@ md_watch_attach(MultiDictObject* md, int watcher_id, void* user_data)
         }
         watch->bits = 0;
         memset(watch->user_data, 0, sizeof(watch->user_data));
+        memset(watch->epoch, 0, sizeof(watch->epoch));
         watchlog_init(&watch->log);
         md->watch = watch;
     }
     md->watch->bits |= (uint8_t)(1u << watcher_id);
     md->watch->user_data[watcher_id] = user_data;
+    md->watch->epoch[watcher_id] = md->state->watcher_epoch[watcher_id];
     return 0;
 }
 
@@ -248,11 +283,20 @@ md_watch_on_dealloc(MultiDictObject* md)
     PyErr_Fetch(&exc_type, &exc_value, &exc_tb);
 
     /* A non-empty log here means some mutation entry point skipped its
-       md_watch_flush(); the assert is the cheapest way to catch that. */
-    assert(watchlog_empty(&watch->log));
+       md_watch_flush(). The assert catches that in a debug build; release
+       wheels are built with NDEBUG, so report it there too rather than
+       discarding the events without a trace. */
+    if (UNLIKELY(!watchlog_empty(&watch->log))) {
+        assert(false);
+        PyErr_Format(PyExc_SystemError,
+                     "multidict discarded queued watcher events at "
+                     "deallocation");
+        PyErr_WriteUnraisable(NULL);
+    }
     watchlog_drain(&watch->log);
 
-    if (watch->bits != 0) {
+    uint8_t bits = md_watch_live_bits(md->state, watch);
+    if (bits != 0) {
         MultiDict_WatchInfo info;
         info.event = MultiDict_EVENT_DEALLOCATED;
         info.self = (PyObject*)md;
@@ -261,7 +305,7 @@ md_watch_on_dealloc(MultiDictObject* md)
         info.key = NULL;
         info.value = NULL;
         info.old_value = NULL;
-        _md_watch_call(md->state, watch->bits, watch->user_data, &info);
+        _md_watch_call(md->state, bits, watch->user_data, &info);
     }
     PyMem_Free(watch);
 

@@ -371,6 +371,9 @@ MultiDict_AddWatcher(void* state_, MultiDict_WatchCallback callback,
         if (state->watchers[watcher_id] == NULL) {
             state->watchers[watcher_id] = callback;
             state->watcher_data[watcher_id] = watcher_data;
+            /* Retires every watch taken through a previous owner of this
+               slot; see md_watch_live_bits(). */
+            state->watcher_epoch[watcher_id]++;
             return watcher_id;
         }
     }
@@ -399,15 +402,12 @@ MultiDict_ClearWatcher(void* state_, int watcher_id)
     }
     /* Multidicts still carrying the bit keep it: nothing enumerates them.
        A stale bit resolves to this NULL slot and is skipped, same as
-       CPython's PyDict_ClearWatcher().
-
-       Only until the slot is handed out again, though: the next
-       AddWatcher() takes this ID, and those multidicts then report to
-       the new callback with the previous one's user_data. Left as the
-       documented contract (register at module init, unwatch before
-       clearing) rather than fixed, since closing it means a generation
-       counter per slot mirrored in every md_watch_t. See the warning
-       under MultiDict_ClearWatcher in docs/capi.rst. */
+       CPython's PyDict_ClearWatcher(). It stays skipped once the slot is
+       handed out again, because the next AddWatcher() bumps the slot's
+       epoch and those watches carry the old one: unlike CPython's, a
+       watch here owns a user_data pointer, and handing the previous
+       client's pointer to the next client's callback would be a
+       use-after-free waiting to happen. */
     state->watchers[watcher_id] = NULL;
     state->watcher_data[watcher_id] = NULL;
     return 0;

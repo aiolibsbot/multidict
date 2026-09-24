@@ -591,7 +591,8 @@ time, matching CPython's limit.
    `PyErr_WriteUnraisable()
    <https://docs.python.org/3/c-api/exceptions.html#c.PyErr_WriteUnraisable>`_
    and carries on delivering the remaining events. This is CPython's rule
-   for dict watchers too.
+   for dict watchers too. Returning ``-1`` without setting an exception
+   is reported as a :exc:`SystemError`, so the failure still surfaces.
 
    The callback runs with no lock on *self* held, so it **may** read
    *self*: :c:func:`MultiDict_Size`, :c:func:`MultiDict_GetItem` and
@@ -634,18 +635,16 @@ time, matching CPython's limit.
    now-empty slot, so nothing is delivered while that slot is free.
    CPython's :c:func:`!PyDict_ClearWatcher` behaves the same way.
 
-   .. warning::
+   Those watches stay silent once the ID is handed out again, too: a
+   watch belongs to the registration it was taken under, so a later
+   :c:func:`MultiDict_AddWatcher` reusing the slot never receives them,
+   and never sees the previous client's *user_data*. Unlike CPython's,
+   a watch here carries a pointer ``multidict`` does not own, and that
+   pointer may be gone by then.
 
-      A later :c:func:`MultiDict_AddWatcher` hands the same ID out
-      again, and any multidict left carrying the bit then reports to the
-      **new** callback, carrying the **old** *user_data*. ``multidict``
-      does not own that pointer, so by then it may be freed.
-
-      Register once during module initialization and leave the watcher
-      registered for the life of the interpreter, which is what CPython
-      recommends for dict watchers too. If you do clear a watcher,
-      :c:func:`MultiDict_Unwatch` every multidict you watched first, or
-      be certain that none of them is still alive.
+   Registering once during module initialization and leaving the watcher
+   registered for the life of the interpreter is still what CPython
+   recommends for dict watchers, and what this API is built for.
 
 .. c:function:: int MultiDict_Watch(MultiDict_CAPI *capi, int watcher_id, PyObject *self, void *user_data)
 

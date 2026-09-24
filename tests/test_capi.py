@@ -2,6 +2,7 @@ import importlib
 import os
 import sys
 import types
+from typing import Any
 
 import pytest
 
@@ -1082,6 +1083,45 @@ def test_a_failing_callback_is_reported_as_unraisable(
     assert md["a"] == "1"  # the mutation still happened
     assert log == [None]  # the callback did run
     assert len(unraisable) == 1
+
+
+def test_a_callback_failing_without_an_exception_is_still_reported(
+    api: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A callback that returns -1 without setting an exception breaks the
+    # contract, and PyErr_WriteUnraisable() needs something to report, so
+    # multidict substitutes one rather than letting the failure vanish.
+    unraisable: list[Any] = []
+    monkeypatch.setattr(sys, "unraisablehook", unraisable.append)
+    log: list[Event] = []
+    watcher_id = api.md_add_silent_failing_watcher(log)
+    md: MultiDictStr = multidict.MultiDict()
+    api.md_watch(watcher_id, md, None)
+    md.add("a", "1")
+    api.md_clear_watcher(watcher_id)
+    api.watch_release_refs()
+    assert log == [None]  # the callback did run
+    assert len(unraisable) == 1
+    assert unraisable[0].exc_type is SystemError
+
+
+def test_a_reused_watcher_id_does_not_inherit_old_watches(api: object) -> None:
+    # A watch carries a user_data pointer multidict does not own, so a
+    # multidict still carrying a cleared watcher's bit must stay silent
+    # when the slot is handed out again, rather than reporting to the new
+    # callback with the old client's pointer.
+    first: list[Event] = []
+    watcher_id = api.md_add_watcher(first)
+    md: MultiDictStr = multidict.MultiDict()
+    api.md_watch(watcher_id, md, None)
+    api.md_clear_watcher(watcher_id)
+    second: list[Event] = []
+    assert api.md_add_watcher(second) == watcher_id  # the same slot
+    md.add("a", "1")
+    del md
+    api.md_clear_watcher(watcher_id)
+    api.watch_release_refs()
+    assert second == []
 
 
 def test_a_callback_that_unwatches_gets_no_further_events(api: object) -> None:
