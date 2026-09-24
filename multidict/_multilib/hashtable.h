@@ -624,7 +624,8 @@ _md_add_with_hash_steal_refs(MultiDictObject* md, Py_hash_t hash,
     add_used(md, 1);
     keys->usable -= 1;
     keys->nentries += 1;
-    md_watch_record(md, MultiDict_EVENT_ADDED, identity, key, value, NULL);
+    md_watch_record(
+        md, MultiDict_EVENT_ADDED, identity, hash, key, value, NULL);
     return 0;
 }
 
@@ -677,7 +678,8 @@ _md_add_for_upd_steal_refs(MultiDictObject* md, Py_hash_t hash,
     add_used(md, 1);
     keys->usable -= 1;
     keys->nentries += 1;
-    md_watch_record(md, MultiDict_EVENT_ADDED, identity, key, value, NULL);
+    md_watch_record(
+        md, MultiDict_EVENT_ADDED, identity, hash, key, value, NULL);
     return 0;
 }
 
@@ -859,6 +861,7 @@ restart:;
         md_watch_record(md,
                         MultiDict_EVENT_DELETED,
                         entry->identity,
+                        hash,
                         entry->key,
                         entry->value,
                         NULL);
@@ -1487,6 +1490,7 @@ _md_pop_one_locked(MultiDictObject* md, PyObject* identity, Py_hash_t hash,
             md_watch_record(md,
                             MultiDict_EVENT_DELETED,
                             identity,
+                            hash,
                             entry->key,
                             value,
                             NULL);
@@ -1609,6 +1613,7 @@ restart:;
             md_watch_record(md,
                             MultiDict_EVENT_DELETED,
                             identity,
+                            hash,
                             entry->key,
                             entry->value,
                             NULL);
@@ -1701,6 +1706,7 @@ md_pop_item(MultiDictObject* md)
     md_watch_record(md,
                     MultiDict_EVENT_DELETED,
                     entry->identity,
+                    entry->hash,
                     entry->key,
                     entry->value,
                     NULL);
@@ -1760,6 +1766,7 @@ _md_replace(MultiDictObject* md, PyObject* key, PyObject* value,
                 md_watch_record(md,
                                 MultiDict_EVENT_REPLACED,
                                 identity,
+                                hash,
                                 key,
                                 value,
                                 old_value);
@@ -1779,6 +1786,7 @@ _md_replace(MultiDictObject* md, PyObject* key, PyObject* value,
                 md_watch_record(md,
                                 MultiDict_EVENT_DELETED,
                                 entry->identity,
+                                hash,
                                 entry->key,
                                 entry->value,
                                 NULL);
