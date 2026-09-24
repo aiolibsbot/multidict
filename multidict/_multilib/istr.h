@@ -14,8 +14,9 @@ typedef struct {
 } istrobject;
 
 #define IStr_CheckExact(state, obj) Py_IS_TYPE(obj, state->IStrType)
-#define IStr_Check(state, obj) \
-    (IStr_CheckExact(state, obj) || PyObject_TypeCheck(obj, state->IStrType))
+/* istr is final (no Py_TPFLAGS_BASETYPE), so it has no subtypes and this
+   is the same test as IStr_CheckExact. Kept for the public C API. */
+#define IStr_Check(state, obj) IStr_CheckExact(state, obj)
 
 PyDoc_STRVAR(istr__doc__, "istr class implementation");
 
@@ -184,7 +185,7 @@ static PyType_Slot istr_slots[] = {
 static PyType_Spec istr_spec = {
     .name = "multidict._multidict.istr",
     .basicsize = sizeof(istrobject),
-    .flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE
+    .flags = (Py_TPFLAGS_DEFAULT
 #if PY_VERSION_HEX >= 0x030a00f0
               | Py_TPFLAGS_IMMUTABLETYPE
 #endif

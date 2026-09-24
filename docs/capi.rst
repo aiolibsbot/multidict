@@ -124,7 +124,8 @@ istr
    **Thread safety:** Atomic.
 
    Like :c:func:`MultiDict_Check` / :c:func:`MultiDict_CheckExact`, but
-   for :class:`~multidict.istr`.
+   for :class:`~multidict.istr`. Because :class:`~multidict.istr` is final,
+   :c:func:`IStr_Check` and :c:func:`IStr_CheckExact` are equivalent.
 
 .. c:function:: PyObject *IStr_FromUnicode(MultiDict_CAPI *capi, PyObject *str)
 
