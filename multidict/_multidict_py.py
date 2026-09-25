@@ -48,6 +48,9 @@ _RESUME_SLOTS_MIN_STEPS = 32
 class istr(str):
     """Case insensitive str."""
 
+    # Mirrors the C extension's missing Py_TPFLAGS_BASETYPE. A base class
+    # with its own non-cooperative __init_subclass__ can shadow this one;
+    # the C flag cannot be bypassed that way.
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError(f"type '{istr.__module__}.istr' is not an acceptable base type")
 
@@ -666,7 +669,7 @@ class _CIMixin:
             return istr(key)
 
     def _identity(self, key: str) -> str:
-        if isinstance(key, istr):
+        if type(key) is istr:
             ret = key.__istr_identity__
             if ret is None:
                 ret = key.lower()
@@ -677,8 +680,7 @@ class _CIMixin:
             if type(ret) is not str:
                 return str.__str__(ret)
             return ret
-        else:
-            raise TypeError("MultiDict keys should be either str or subclasses of str")
+        raise TypeError("MultiDict keys should be either str or subclasses of str")
 
 
 def estimate_log2_keysize(n: int) -> int:

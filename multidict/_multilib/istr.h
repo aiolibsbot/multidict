@@ -14,9 +14,6 @@ typedef struct {
 } istrobject;
 
 #define IStr_CheckExact(state, obj) Py_IS_TYPE(obj, state->IStrType)
-/* istr is final (no Py_TPFLAGS_BASETYPE), so it has no subtypes and this
-   is the same test as IStr_CheckExact. Kept for the public C API. */
-#define IStr_Check(state, obj) IStr_CheckExact(state, obj)
 
 PyDoc_STRVAR(istr__doc__, "istr class implementation");
 
@@ -61,7 +58,7 @@ istr_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
             args, kwds, "|OOO:str", kwlist, &x, &encoding, &errors)) {
         return NULL;
     }
-    if (x != NULL && IStr_Check(state, x)) {
+    if (x != NULL && IStr_CheckExact(state, x)) {
         Py_INCREF(x);
         return x;
     }
@@ -77,7 +74,7 @@ istr_new(PyTypeObject* type, PyObject* args, PyObject* kwds)
 static inline PyObject*
 _istr_from_object(PyTypeObject* type, mod_state* state, PyObject* x)
 {
-    if (IStr_Check(state, x)) {
+    if (IStr_CheckExact(state, x)) {
         return Py_NewRef(x);
     }
     PyObject* args = PyTuple_Pack(1, x);

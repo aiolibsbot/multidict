@@ -507,6 +507,10 @@ no cached hash, so every operation also hashes it afresh.
       The class is inherited from :class:`str` and has all regular
       string methods. The class is final and cannot be subclassed.
 
+      .. versionchanged:: 7.0
+
+         :class:`istr` is final and can no longer be subclassed.
+
 .. versionchanged:: 2.0
 
    ``upstr()`` is a deprecated alias for :class:`istr`.

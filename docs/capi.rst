@@ -118,14 +118,12 @@ istr
 
    Return a new reference to the :class:`~multidict.istr` type object.
 
-.. c:function:: int IStr_Check(MultiDict_CAPI *capi, PyObject *op)
-                 int IStr_CheckExact(MultiDict_CAPI *capi, PyObject *op)
+.. c:function:: int IStr_CheckExact(MultiDict_CAPI *capi, PyObject *op)
 
    **Thread safety:** Atomic.
 
-   Like :c:func:`MultiDict_Check` / :c:func:`MultiDict_CheckExact`, but
-   for :class:`~multidict.istr`. Because :class:`~multidict.istr` is final,
-   :c:func:`IStr_Check` and :c:func:`IStr_CheckExact` are equivalent.
+   Like :c:func:`MultiDict_CheckExact`, but for :class:`~multidict.istr`.
+   :class:`~multidict.istr` is final, so there is no non-exact variant.
 
 .. c:function:: PyObject *IStr_FromUnicode(MultiDict_CAPI *capi, PyObject *str)
 
