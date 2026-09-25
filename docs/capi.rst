@@ -826,10 +826,12 @@ A watcher that guards something derived from a multidict only needs the
 first change after the cache was filled. Unwatch from inside the
 callback and watch again on the next rebuild, so mutations made while
 the cache is already empty cost nothing, and a multidict that keeps
-changing costs one event per rebuild. Counting rebuild attempts lets a
-cache that is thrown away every time stop trying, which is how
-CPython's JIT treats a module's globals once they have changed a few
-times.
+changing costs one event per rebuild. ``MAX_REBUILDS`` caps how many
+rebuilds a ``cached`` ever starts, so one that keeps being thrown away
+stops trying; it is a lifetime cap and not a rate, so a cache that
+earned its keep for a long time retires the same way. CPython's JIT
+gives up on a module's globals along the same lines, once they have
+changed a few times.
 
 The callback runs on whichever thread mutated the multidict, and an
 event goes to whoever is watching when the operation finishes, so it
@@ -859,6 +861,12 @@ it.
    {
        my_mod_state *state = (my_mod_state *)watcher_data;
        cached *c = (cached *)user_data;
+       if (info->event == MultiDict_EVENT_DEALLOCATED) {
+           /* Cannot happen here: `c` holds a strong reference and
+              unwatches before releasing it. Bail out anyway, `self` is
+              at refcount 0. */
+           return 0;
+       }
        if (info->event == MultiDict_EVENT_BATCH_BEGIN ||
            info->event == MultiDict_EVENT_BATCH_END) {
            /* A bracket alone changes nothing: an empty update() sends one. */
@@ -907,7 +915,8 @@ it.
        /* Read before watching, so any change the result misses moves the
           version past it. */
        uint64_t version = MultiDict_GetVersion(state->capi, c->headers);
-       if (MultiDict_Watch(state->capi, state->watcher_id, c->headers, c) == 0) {
+       if (MultiDict_Watch(state->capi, state->watcher_id,
+                           c->headers, c) == 0) {
            parsed = parse(c->headers);
        }
        PyObject *exc = parsed == NULL ? PyErr_GetRaisedException() : NULL;
